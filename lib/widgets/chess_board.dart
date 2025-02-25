@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/chess_piece.dart';
+import 'promotion_dialog.dart';
 
 class ChessBoard extends StatefulWidget {
   const ChessBoard({super.key});
@@ -199,6 +200,37 @@ class _ChessBoardState extends State<ChessBoard> {
 
           if (!_isInCheck(currentPlayer)) {
             moveMade = true;
+
+            // Prüfe auf Bauernumwandlung
+            if (movingPiece.type == PieceType.pawn) {
+              final rank = int.parse(position[1]);
+              if ((movingPiece.color == PieceColor.white && rank == 8) ||
+                  (movingPiece.color == PieceColor.black && rank == 1)) {
+                // Entferne den Bauern temporär
+                pieces.remove(pieces.last);
+                
+                // Zeige Dialog für Figurenauswahl
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (BuildContext context) {
+                    return PromotionDialog(
+                      position: position,
+                      color: movingPiece.color,
+                      onPieceSelected: (PieceType selectedType) {
+                        setState(() {
+                          pieces.add(ChessPiece(
+                            type: selectedType,
+                            color: movingPiece.color,
+                            position: position,
+                          ));
+                        });
+                      },
+                    );
+                  },
+                );
+              }
+            }
           } else {
             // Mache den Zug rückgängig
             pieces.remove(pieces.last);
