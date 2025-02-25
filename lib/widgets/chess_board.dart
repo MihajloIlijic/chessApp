@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/chess_piece.dart';
 import 'promotion_dialog.dart';
+import '../models/chess_move.dart';
 
 class ChessBoard extends StatefulWidget {
   const ChessBoard({super.key});
@@ -18,10 +19,14 @@ class _ChessBoardState extends State<ChessBoard> {
   bool isRotated = false; // Neue Variable für die Drehung
 
   // Neue Variablen für das Tracking der Bewegungen
-  final Map<String, bool> hasMoved = {};
+  Map<String, bool> hasMoved = {};
 
   // Variable für En Passant
   String? enPassantTargetSquare;
+
+  // Neue Variablen hinzufügen
+  List<ChessMove> moveHistory = [];
+  int currentMoveIndex = -1;
 
   @override
   void initState() {
@@ -143,7 +148,11 @@ class _ChessBoardState extends State<ChessBoard> {
         bool moveMade = false;
 
         if (_isValidMove(movingPiece, position)) {
+          // Speichere den Zustand vor dem Zug
           final originalPosition = movingPiece.position;
+          final boardStateBefore = List<ChessPiece>.from(pieces);
+          final moveStateBefore = Map<String, bool>.from(hasMoved);
+
           final capturedPiece = _getPieceAtPosition(position);
 
           // Prüfe auf En Passant
@@ -224,13 +233,53 @@ class _ChessBoardState extends State<ChessBoard> {
                             color: movingPiece.color,
                             position: position,
                           ));
+                          
+                          // Speichere den Zug NACH der Promotion
+                          if (currentMoveIndex < moveHistory.length - 1) {
+                            moveHistory.removeRange(currentMoveIndex + 1, moveHistory.length);
+                          }
+
+                          moveHistory.add(ChessMove(
+                            from: originalPosition,
+                            to: position,
+                            boardState: List<ChessPiece>.from(pieces),
+                            currentPlayer: currentPlayer,
+                            enPassantTarget: enPassantTargetSquare,
+                            moveState: Map<String, bool>.from(hasMoved),
+                            isCapture: false,
+                            isCheck: false,
+                            isMate: false,
+                            pieceType: movingPiece.type,
+                          ));
+                          currentMoveIndex++;
                         });
                       },
                     );
                   },
                 );
+                return; // Beende die Methode hier
               }
             }
+
+            // Wenn der Zug erfolgreich war, speichere ihn in der Historie
+            // Lösche alle Züge nach dem aktuellen Index
+            if (currentMoveIndex < moveHistory.length - 1) {
+              moveHistory.removeRange(currentMoveIndex + 1, moveHistory.length);
+            }
+
+            moveHistory.add(ChessMove(
+              from: originalPosition,
+              to: position,
+              boardState: List<ChessPiece>.from(pieces),
+              currentPlayer: currentPlayer,
+              enPassantTarget: enPassantTargetSquare,
+              moveState: Map<String, bool>.from(hasMoved),
+              isCapture: capturedPiece != null || position == enPassantTargetSquare,
+              isCheck: _isInCheck(currentPlayer == PieceColor.white ? PieceColor.black : PieceColor.white),
+              isMate: _isCheckmate(currentPlayer == PieceColor.white ? PieceColor.black : PieceColor.white),
+              pieceType: movingPiece.type,
+            ));
+            currentMoveIndex++;
           } else {
             // Mache den Zug rückgängig
             pieces.remove(pieces.last);
@@ -285,8 +334,7 @@ class _ChessBoardState extends State<ChessBoard> {
             }
           }
         }
-      }
-    });
+      }});
   }
 
   bool _isValidMove(ChessPiece piece, String targetPosition, {bool checkCastling = true}) {
@@ -594,19 +642,80 @@ class _ChessBoardState extends State<ChessBoard> {
     return false;
   }
 
+  // Neue Methoden für die Navigation
+  void _goToMove(int index) {
+    if (index >= -1 && index < moveHistory.length) {
+      setState(() {
+        currentMoveIndex = index;
+        if (index == -1) {
+          // Zurück zum Anfang
+          _setupInitialBoard();
+          currentPlayer = PieceColor.white;
+          enPassantTargetSquare = null;
+          hasMoved.clear();
+          hasMoved['e1'] = false;
+          hasMoved['e8'] = false;
+          hasMoved['a1'] = false;
+          hasMoved['h1'] = false;
+          hasMoved['a8'] = false;
+          hasMoved['h8'] = false;
+        } else {
+          // Stelle den Zustand nach dem gewählten Zug wieder her
+          final move = moveHistory[index];
+          pieces = List<ChessPiece>.from(move.boardState);
+          currentPlayer = move.currentPlayer == PieceColor.white 
+              ? PieceColor.black 
+              : PieceColor.white;
+          enPassantTargetSquare = move.enPassantTarget;
+          hasMoved = Map<String, bool>.from(move.moveState);
+        }
+        selectedPiece = null;
+        possibleMoves = [];
+      });
+    }
+  }
+
+  // Neue Hilfsmethode für die Schachnotation
+  String _getNotation(String from, String to, ChessPiece piece, bool isCapture, bool isCheck, bool isMate) {
+    String notation = '';
+    
+    // Figur-Symbol (außer bei Bauern)
+    if (piece.type != PieceType.pawn) {
+      switch (piece.type) {
+        case PieceType.king: notation += 'K';
+        case PieceType.queen: notation += 'D';
+        case PieceType.rook: notation += 'T';
+        case PieceType.bishop: notation += 'L';
+        case PieceType.knight: notation += 'S';
+        case PieceType.pawn: break;
+      }
+    }
+    
+    notation += from; // Ausgangsfeld
+    notation += isCapture ? 'x' : '-';
+    notation += to; // Zielfeld
+    
+    if (isMate) {
+      notation += '#';
+    } else if (isCheck) {
+      notation += '+';
+    }
+    
+    return notation;
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = constraints.maxWidth < constraints.maxHeight 
             ? constraints.maxWidth 
-            : constraints.maxHeight * 0.9;
+            : constraints.maxHeight * 0.7;
         
         final squareSize = size / 8;
         final fontSize = squareSize * 0.6;
 
-        return SizedBox(
-          height: size + 50,
+        return SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -625,7 +734,6 @@ class _ChessBoardState extends State<ChessBoard> {
                     onPressed: () {
                       setState(() {
                         isRotated = !isRotated;
-                        // Leere die möglichen Züge beim Drehen
                         possibleMoves = [];
                         selectedPiece = null;
                       });
@@ -690,6 +798,45 @@ class _ChessBoardState extends State<ChessBoard> {
                       ),
                     );
                   },
+                ),
+              ),
+              // Notationsliste
+              Container(
+                height: 100,
+                width: size,
+                margin: const EdgeInsets.symmetric(vertical: 8.0),
+                padding: const EdgeInsets.all(8.0),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (int i = 0; i < moveHistory.length; i += 2) ...[
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Zugnummer
+                            SizedBox(
+                              width: 40,
+                              child: Text('${(i ~/ 2) + 1}.'),
+                            ),
+                            // Weißer Zug
+                            Expanded(
+                              child: Text(moveHistory[i].notation),
+                            ),
+                            // Schwarzer Zug (wenn vorhanden)
+                            if (i + 1 < moveHistory.length) Expanded(
+                              child: Text(moveHistory[i + 1].notation),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ],
