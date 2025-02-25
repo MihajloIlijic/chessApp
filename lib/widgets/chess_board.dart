@@ -11,6 +11,7 @@ class ChessBoard extends StatefulWidget {
 class _ChessBoardState extends State<ChessBoard> {
   ChessPiece? selectedPiece;
   List<ChessPiece> pieces = [];
+  List<String> possibleMoves = []; // Neue Liste für mögliche Züge
   // Weiß beginnt
   PieceColor currentPlayer = PieceColor.white;
 
@@ -25,8 +26,8 @@ class _ChessBoardState extends State<ChessBoard> {
     pieces.add(ChessPiece(type: PieceType.rook, color: PieceColor.white, position: 'a1'));
     pieces.add(ChessPiece(type: PieceType.knight, color: PieceColor.white, position: 'b1'));
     pieces.add(ChessPiece(type: PieceType.bishop, color: PieceColor.white, position: 'c1'));
-    pieces.add(ChessPiece(type: PieceType.queen, color: PieceColor.white, position: 'd1'));
-    pieces.add(ChessPiece(type: PieceType.king, color: PieceColor.white, position: 'e1'));
+    pieces.add(ChessPiece(type: PieceType.king, color: PieceColor.white, position: 'e1')); // König auf e1
+    pieces.add(ChessPiece(type: PieceType.queen, color: PieceColor.white, position: 'd1')); // Dame auf d1
     pieces.add(ChessPiece(type: PieceType.bishop, color: PieceColor.white, position: 'f1'));
     pieces.add(ChessPiece(type: PieceType.knight, color: PieceColor.white, position: 'g1'));
     pieces.add(ChessPiece(type: PieceType.rook, color: PieceColor.white, position: 'h1'));
@@ -40,8 +41,8 @@ class _ChessBoardState extends State<ChessBoard> {
     pieces.add(ChessPiece(type: PieceType.rook, color: PieceColor.black, position: 'a8'));
     pieces.add(ChessPiece(type: PieceType.knight, color: PieceColor.black, position: 'b8'));
     pieces.add(ChessPiece(type: PieceType.bishop, color: PieceColor.black, position: 'c8'));
-    pieces.add(ChessPiece(type: PieceType.queen, color: PieceColor.black, position: 'd8'));
-    pieces.add(ChessPiece(type: PieceType.king, color: PieceColor.black, position: 'e8'));
+    pieces.add(ChessPiece(type: PieceType.king, color: PieceColor.black, position: 'e8')); // König auf e8
+    pieces.add(ChessPiece(type: PieceType.queen, color: PieceColor.black, position: 'd8')); // Dame auf d8
     pieces.add(ChessPiece(type: PieceType.bishop, color: PieceColor.black, position: 'f8'));
     pieces.add(ChessPiece(type: PieceType.knight, color: PieceColor.black, position: 'g8'));
     pieces.add(ChessPiece(type: PieceType.rook, color: PieceColor.black, position: 'h8'));
@@ -55,8 +56,11 @@ class _ChessBoardState extends State<ChessBoard> {
   String _getPositionFromIndex(int index) {
     // Wir drehen das Brett um 180 Grad, indem wir den Index umkehren
     final adjustedIndex = 63 - index;
-    final file = String.fromCharCode('a'.codeUnitAt(0) + (adjustedIndex % 8));
+    
+    // Die Spalte (file) sollte von a-h gehen, nicht h-a
+    final file = String.fromCharCode('a'.codeUnitAt(0) + (7 - (adjustedIndex % 8)));
     final rank = (adjustedIndex ~/ 8) + 1;
+    
     return '$file$rank';
   }
 
@@ -65,21 +69,32 @@ class _ChessBoardState extends State<ChessBoard> {
     return matches.isEmpty ? null : matches.first;
   }
 
+  // Neue Methode zum Berechnen aller möglichen Züge
+  void _calculatePossibleMoves(ChessPiece piece) {
+    possibleMoves = [];
+    for (int rank = 1; rank <= 8; rank++) {
+      for (String file in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+        final targetPosition = '$file$rank';
+        if (_isValidMove(piece, targetPosition)) {
+          possibleMoves.add(targetPosition);
+        }
+      }
+    }
+  }
+
   void _onTileTapped(String position) {
     setState(() {
       final tappedPiece = _getPieceAtPosition(position);
       
       if (selectedPiece == null) {
-        // Nur Figuren der aktuellen Farbe können ausgewählt werden
         if (tappedPiece != null && tappedPiece.color == currentPlayer) {
           selectedPiece = tappedPiece;
+          _calculatePossibleMoves(tappedPiece); // Berechne mögliche Züge
         }
       } else {
         bool moveMade = false;
         
-        // Prüfen ob der Zug legal ist
         if (_isValidMove(selectedPiece!, position)) {
-          // Bewege die Figur
           pieces.removeWhere((piece) => piece.position == selectedPiece!.position);
           pieces.removeWhere((piece) => piece.position == position);
           pieces.add(ChessPiece(
@@ -91,8 +106,8 @@ class _ChessBoardState extends State<ChessBoard> {
         }
         
         selectedPiece = null;
+        possibleMoves = []; // Lösche mögliche Züge
 
-        // Spieler wechseln nach erfolgreichem Zug
         if (moveMade) {
           currentPlayer = (currentPlayer == PieceColor.white) 
               ? PieceColor.black 
@@ -253,16 +268,21 @@ class _ChessBoardState extends State<ChessBoard> {
                     final position = _getPositionFromIndex(index);
                     final piece = _getPieceAtPosition(position);
                     final isSelected = selectedPiece?.position == position;
+                    final isPossibleMove = possibleMoves.contains(position);
 
                     return GestureDetector(
                       onTap: () => _onTileTapped(position),
                       child: Container(
                         color: isSelected 
                             ? Colors.yellow[700]
-                            : (isWhite ? Colors.white : Colors.grey[800]),
-                        child: Center(
-                          child: piece != null
-                              ? Text(
+                            : isPossibleMove 
+                                ? Colors.green[300] // Markiere mögliche Züge
+                                : (isWhite ? Colors.white : Colors.grey[800]),
+                        child: Stack(
+                          children: [
+                            if (piece != null)
+                              Center(
+                                child: Text(
                                   piece.symbol,
                                   style: TextStyle(
                                     fontSize: fontSize,
@@ -279,8 +299,20 @@ class _ChessBoardState extends State<ChessBoard> {
                                       ),
                                     ],
                                   ),
-                                )
-                              : null,
+                                ),
+                              ),
+                            if (isPossibleMove && piece == null)
+                              Center(
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.3),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     );
