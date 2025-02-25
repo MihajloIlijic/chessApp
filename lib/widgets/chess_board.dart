@@ -60,7 +60,7 @@ class _ChessBoardState extends State<ChessBoard> {
       final row = 7 - (index ~/ 8);
       final col = 7 - (index % 8);
       final newIndex = row * 8 + col;
-      
+
       final file = String.fromCharCode('a'.codeUnitAt(0) + (newIndex % 8));
       final rank = 8 - (newIndex ~/ 8);
       return '$file$rank';
@@ -84,7 +84,32 @@ class _ChessBoardState extends State<ChessBoard> {
       for (String file in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
         final targetPosition = '$file$rank';
         if (_isValidMove(piece, targetPosition)) {
-          possibleMoves.add(targetPosition);
+          // Simuliere den Zug temporär
+          final originalPosition = piece.position;
+          final capturedPiece = _getPieceAtPosition(targetPosition);
+
+          // Führe den Zug temporär aus
+          if (capturedPiece != null) {
+            pieces.remove(capturedPiece);
+          }
+          pieces.remove(piece);
+          pieces.add(ChessPiece(
+            type: piece.type,
+            color: piece.color,
+            position: targetPosition
+          ));
+
+          // Prüfe ob der eigene König nach dem Zug im Schach steht
+          if (!_isInCheck(currentPlayer)) {
+            possibleMoves.add(targetPosition);
+          }
+
+          // Mache den Zug rückgängig
+          pieces.remove(pieces.last);
+          pieces.add(piece);
+          if (capturedPiece != null) {
+            pieces.add(capturedPiece);
+          }
         }
       }
     }
@@ -93,7 +118,7 @@ class _ChessBoardState extends State<ChessBoard> {
   void _onTileTapped(String position) {
     setState(() {
       final tappedPiece = _getPieceAtPosition(position);
-      
+
       if (selectedPiece == null) {
         if (tappedPiece != null && tappedPiece.color == currentPlayer) {
           selectedPiece = tappedPiece;
@@ -103,18 +128,18 @@ class _ChessBoardState extends State<ChessBoard> {
         // Stellen Sie sicher, dass selectedPiece nicht null ist
         final movingPiece = selectedPiece!;
         bool moveMade = false;
-        
+
         if (_isValidMove(movingPiece, position)) {
           // Simuliere den Zug um zu prüfen, ob er den eigenen König in Schach setzt
           final originalPosition = movingPiece.position;
           final capturedPiece = _getPieceAtPosition(position);
-          
+
           // Führe den Zug temporär aus
           if (capturedPiece != null) {
             pieces.remove(capturedPiece);
           }
           pieces.remove(movingPiece);
-          
+
           final newPiece = ChessPiece(
             type: movingPiece.type,
             color: movingPiece.color,
@@ -134,15 +159,15 @@ class _ChessBoardState extends State<ChessBoard> {
             }
           }
         }
-        
+
         selectedPiece = null;
         possibleMoves = [];
 
         if (moveMade) {
-          currentPlayer = (currentPlayer == PieceColor.white) 
-              ? PieceColor.black 
+          currentPlayer = (currentPlayer == PieceColor.white)
+              ? PieceColor.black
               : PieceColor.white;
-            
+
           // Prüfe auf Schach oder Schachmatt
           if (_isInCheck(currentPlayer)) {
             if (_isCheckmate(currentPlayer)) {
@@ -207,13 +232,13 @@ class _ChessBoardState extends State<ChessBoard> {
 
       case PieceType.queen:
         // Königin kann diagonal, horizontal oder vertikal beliebig weit ziehen
-        return _isPathClear(piece.position, targetPosition) && 
+        return _isPathClear(piece.position, targetPosition) &&
                (fileDiff.abs() == rankDiff.abs() || // diagonal
                 fileDiff == 0 || rankDiff == 0);    // horizontal/vertikal
 
       case PieceType.bishop:
         // Läufer kann nur diagonal ziehen
-        return _isPathClear(piece.position, targetPosition) && 
+        return _isPathClear(piece.position, targetPosition) &&
                (fileDiff.abs() == rankDiff.abs());
 
       case PieceType.knight:
@@ -223,7 +248,7 @@ class _ChessBoardState extends State<ChessBoard> {
 
       case PieceType.rook:
         // Turm kann nur horizontal oder vertikal ziehen
-        return _isPathClear(piece.position, targetPosition) && 
+        return _isPathClear(piece.position, targetPosition) &&
                (fileDiff == 0 || rankDiff == 0);
 
       case PieceType.pawn:
@@ -236,7 +261,7 @@ class _ChessBoardState extends State<ChessBoard> {
               return true;
             }
             // Doppelzug von Startposition
-            if (currentRank == 2 && rankDiff == 2 && 
+            if (currentRank == 2 && rankDiff == 2 &&
                 _getPieceAtPosition(targetPosition) == null &&
                 _getPieceAtPosition('$currentFile${currentRank + 1}') == null) {
               return true;
@@ -253,7 +278,7 @@ class _ChessBoardState extends State<ChessBoard> {
             if (rankDiff == -1 && _getPieceAtPosition(targetPosition) == null) {
               return true;
             }
-            if (currentRank == 7 && rankDiff == -2 && 
+            if (currentRank == 7 && rankDiff == -2 &&
                 _getPieceAtPosition(targetPosition) == null &&
                 _getPieceAtPosition('$currentFile${currentRank - 1}') == null) {
               return true;
