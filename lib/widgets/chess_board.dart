@@ -16,10 +16,20 @@ class _ChessBoardState extends State<ChessBoard> {
   PieceColor currentPlayer = PieceColor.white;
   bool isRotated = false; // Neue Variable für die Drehung
 
+  // Neue Variablen für das Tracking der Bewegungen
+  final Map<String, bool> hasMoved = {};
+
   @override
   void initState() {
     super.initState();
     _setupInitialBoard();
+    // Initialisiere hasMoved für Könige und Türme
+    hasMoved['e1'] = false; // Weißer König
+    hasMoved['e8'] = false; // Schwarzer König
+    hasMoved['a1'] = false; // Weißer Turm links
+    hasMoved['h1'] = false; // Weißer Turm rechts
+    hasMoved['a8'] = false; // Schwarzer Turm links
+    hasMoved['h8'] = false; // Schwarzer Turm rechts
   }
 
   void _setupInitialBoard() {
@@ -134,28 +144,38 @@ class _ChessBoardState extends State<ChessBoard> {
           final originalPosition = movingPiece.position;
           final capturedPiece = _getPieceAtPosition(position);
 
-          // Führe den Zug temporär aus
-          if (capturedPiece != null) {
-            pieces.remove(capturedPiece);
-          }
-          pieces.remove(movingPiece);
-
-          final newPiece = ChessPiece(
-            type: movingPiece.type,
-            color: movingPiece.color,
-            position: position
-          );
-          pieces.add(newPiece);
-
-          // Prüfe ob der eigene König nach dem Zug im Schach steht
-          if (!_isInCheck(currentPlayer)) {
+          // Prüfe auf Rochade
+          if (movingPiece.type == PieceType.king && _canCastle(movingPiece, position)) {
+            _performCastling(movingPiece, position);
             moveMade = true;
           } else {
-            // Mache den Zug rückgängig wenn er den eigenen König in Schach setzt
-            pieces.remove(newPiece);
-            pieces.add(movingPiece);
+            // Normaler Zug (existierender Code)
             if (capturedPiece != null) {
-              pieces.add(capturedPiece);
+              pieces.remove(capturedPiece);
+            }
+            pieces.remove(movingPiece);
+
+            final newPiece = ChessPiece(
+              type: movingPiece.type,
+              color: movingPiece.color,
+              position: position
+            );
+            pieces.add(newPiece);
+
+            // Aktualisiere hasMoved für König und Türme
+            if (movingPiece.type == PieceType.king || movingPiece.type == PieceType.rook) {
+              hasMoved[originalPosition] = true;
+            }
+
+            if (!_isInCheck(currentPlayer)) {
+              moveMade = true;
+            } else {
+              // Mache den Zug rückgängig
+              pieces.remove(newPiece);
+              pieces.add(movingPiece);
+              if (capturedPiece != null) {
+                pieces.add(capturedPiece);
+              }
             }
           }
         }
@@ -208,7 +228,7 @@ class _ChessBoardState extends State<ChessBoard> {
     });
   }
 
-  bool _isValidMove(ChessPiece piece, String targetPosition) {
+  bool _isValidMove(ChessPiece piece, String targetPosition, {bool checkCastling = true}) {
     // Prüfen ob auf dem Zielfeld eine eigene Figur steht
     final targetPiece = _getPieceAtPosition(targetPosition);
     if (targetPiece != null && targetPiece.color == piece.color) {
@@ -227,7 +247,11 @@ class _ChessBoardState extends State<ChessBoard> {
 
     switch (piece.type) {
       case PieceType.king:
-        // König kann sich nur ein Feld in jede Richtung bewegen
+        // Prüfe auf Rochade nur wenn checkCastling true ist
+        if (checkCastling && _canCastle(piece, targetPosition)) {
+          return true;
+        }
+        // Normale Königszüge
         return (fileDiff.abs() <= 1 && rankDiff.abs() <= 1);
 
       case PieceType.queen:
@@ -307,11 +331,11 @@ class _ChessBoardState extends State<ChessBoard> {
     var currentRank = fromRank + rankStep;
 
     // Prüfe, ob wir noch innerhalb des Schachbretts sind
-    while (currentFile >= 'a'.codeUnitAt(0) && 
-           currentFile <= 'h'.codeUnitAt(0) && 
-           currentRank >= 1 && 
+    while (currentFile >= 'a'.codeUnitAt(0) &&
+           currentFile <= 'h'.codeUnitAt(0) &&
+           currentRank >= 1 &&
            currentRank <= 8) {
-      
+
       // Wenn wir das Zielfeld erreicht haben, beenden wir die Schleife
       if (currentFile == toFile && currentRank == toRank) {
         break;
@@ -333,18 +357,11 @@ class _ChessBoardState extends State<ChessBoard> {
 
   // Prüft, ob ein König im Schach steht
   bool _isInCheck(PieceColor kingColor) {
-    // Finde die Position des Königs
     final king = pieces.firstWhere(
       (piece) => piece.type == PieceType.king && piece.color == kingColor
     );
     
-    // Prüfe, ob irgendeine gegnerische Figur den König angreifen kann
-    for (final piece in pieces) {
-      if (piece.color != kingColor && _isValidMove(piece, king.position)) {
-        return true;
-      }
-    }
-    return false;
+    return _isSquareAttacked(king.position, kingColor);
   }
 
   // Prüft, ob Schachmatt vorliegt
@@ -362,9 +379,9 @@ class _ChessBoardState extends State<ChessBoard> {
         final targetPosition = '$file$rank';
         if (_isValidMove(king, targetPosition)) {
           // Simuliere den Zug
-          final originalPosition = king.position;
+
           final capturedPiece = _getPieceAtPosition(targetPosition);
-          
+
           // Führe den Zug temporär aus
           pieces.remove(capturedPiece);
           pieces.remove(king);
@@ -399,9 +416,8 @@ class _ChessBoardState extends State<ChessBoard> {
           final targetPosition = '$file$rank';
           if (_isValidMove(piece, targetPosition)) {
             // Simuliere den Zug
-            final originalPosition = piece.position;
             final capturedPiece = _getPieceAtPosition(targetPosition);
-            
+
             // Führe den Zug temporär aus
             pieces.remove(capturedPiece);
             pieces.remove(piece);
@@ -430,6 +446,79 @@ class _ChessBoardState extends State<ChessBoard> {
     }
 
     return true; // Keine Möglichkeit das Schach abzuwehren -> Schachmatt
+  }
+
+  // Neue Methode zur Prüfung der Rochade
+  bool _canCastle(ChessPiece king, String targetPosition) {
+    if (king.type != PieceType.king) return false;
+    if (_isInCheck(king.color)) return false;
+
+    // Prüfe ob König sich bereits bewegt hat
+    if (hasMoved[king.position] == true) return false;
+
+    final rankStr = king.color == PieceColor.white ? '1' : '8';
+    final isKingSide = targetPosition == 'g$rankStr'; // Kleine Rochade
+    final isQueenSide = targetPosition == 'c$rankStr'; // Große Rochade
+
+    if (!isKingSide && !isQueenSide) return false;
+
+    final rookFile = isKingSide ? 'h' : 'a';
+    final rookPos = '$rookFile$rankStr';
+
+    // Prüfe ob Turm sich bereits bewegt hat
+    if (hasMoved[rookPos] == true) return false;
+
+    // Prüfe ob Felder zwischen König und Turm frei sind
+    final betweenFiles = isKingSide ? ['f', 'g'] : ['b', 'c', 'd'];
+    for (final file in betweenFiles) {
+      final pos = '$file$rankStr';
+      if (_getPieceAtPosition(pos) != null) return false;
+      // Prüfe auch, ob die Felder bedroht sind (für den König)
+      if (file == 'c' || file == 'f' || file == 'g') {
+        if (_isSquareAttacked(pos, king.color)) return false;
+      }
+    }
+
+    return true;
+  }
+
+  // Neue Methode zur Ausführung der Rochade
+  void _performCastling(ChessPiece king, String targetPosition) {
+    final rankStr = king.color == PieceColor.white ? '1' : '8';
+    final isKingSide = targetPosition == 'g$rankStr';
+
+    // Bewege den König
+    pieces.remove(king);
+    pieces.add(ChessPiece(
+      type: PieceType.king,
+      color: king.color,
+      position: targetPosition
+    ));
+
+    // Bewege den Turm
+    final oldRookFile = isKingSide ? 'h' : 'a';
+    final newRookFile = isKingSide ? 'f' : 'd';
+    final oldRookPos = '$oldRookFile$rankStr';
+    final newRookPos = '$newRookFile$rankStr';
+
+    final rook = _getPieceAtPosition(oldRookPos)!;
+    pieces.remove(rook);
+    pieces.add(ChessPiece(
+      type: PieceType.rook,
+      color: king.color,
+      position: newRookPos
+    ));
+  }
+
+  // Neue Hilfsmethode zur Prüfung ob ein Feld bedroht ist
+  bool _isSquareAttacked(String position, PieceColor defendingColor) {
+    for (final piece in pieces) {
+      if (piece.color != defendingColor && 
+          _isValidMove(piece, position, checkCastling: false)) { // Wichtig: checkCastling: false
+        return true;
+      }
+    }
+    return false;
   }
 
   @override
