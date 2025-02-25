@@ -14,6 +14,7 @@ class _ChessBoardState extends State<ChessBoard> {
   List<String> possibleMoves = []; // Neue Liste für mögliche Züge
   // Weiß beginnt
   PieceColor currentPlayer = PieceColor.white;
+  bool isRotated = false; // Neue Variable für die Drehung
 
   @override
   void initState() {
@@ -54,14 +55,21 @@ class _ChessBoardState extends State<ChessBoard> {
   }
 
   String _getPositionFromIndex(int index) {
-    // Wir drehen das Brett um 180 Grad, indem wir den Index umkehren
-    final adjustedIndex = 63 - index;
-    
-    // Die Spalte (file) sollte von a-h gehen, nicht h-a
-    final file = String.fromCharCode('a'.codeUnitAt(0) + (7 - (adjustedIndex % 8)));
-    final rank = (adjustedIndex ~/ 8) + 1;
-    
-    return '$file$rank';
+    if (isRotated) {
+      // Wenn das Brett gedreht ist, drehen wir die Reihen und Spalten
+      final row = 7 - (index ~/ 8);
+      final col = 7 - (index % 8);
+      final newIndex = row * 8 + col;
+      
+      final file = String.fromCharCode('a'.codeUnitAt(0) + (newIndex % 8));
+      final rank = 8 - (newIndex ~/ 8);
+      return '$file$rank';
+    } else {
+      // Normale Berechnung für nicht gedrehtes Brett
+      final file = String.fromCharCode('a'.codeUnitAt(0) + (index % 8));
+      final rank = 8 - (index ~/ 8);
+      return '$file$rank';
+    }
   }
 
   ChessPiece? _getPieceAtPosition(String position) {
@@ -89,29 +97,87 @@ class _ChessBoardState extends State<ChessBoard> {
       if (selectedPiece == null) {
         if (tappedPiece != null && tappedPiece.color == currentPlayer) {
           selectedPiece = tappedPiece;
-          _calculatePossibleMoves(tappedPiece); // Berechne mögliche Züge
+          _calculatePossibleMoves(tappedPiece);
         }
       } else {
+        // Stellen Sie sicher, dass selectedPiece nicht null ist
+        final movingPiece = selectedPiece!;
         bool moveMade = false;
         
-        if (_isValidMove(selectedPiece!, position)) {
-          pieces.removeWhere((piece) => piece.position == selectedPiece!.position);
-          pieces.removeWhere((piece) => piece.position == position);
-          pieces.add(ChessPiece(
-            type: selectedPiece!.type,
-            color: selectedPiece!.color,
-            position: position,
-          ));
-          moveMade = true;
+        if (_isValidMove(movingPiece, position)) {
+          // Simuliere den Zug um zu prüfen, ob er den eigenen König in Schach setzt
+          final originalPosition = movingPiece.position;
+          final capturedPiece = _getPieceAtPosition(position);
+          
+          // Führe den Zug temporär aus
+          if (capturedPiece != null) {
+            pieces.remove(capturedPiece);
+          }
+          pieces.remove(movingPiece);
+          
+          final newPiece = ChessPiece(
+            type: movingPiece.type,
+            color: movingPiece.color,
+            position: position
+          );
+          pieces.add(newPiece);
+
+          // Prüfe ob der eigene König nach dem Zug im Schach steht
+          if (!_isInCheck(currentPlayer)) {
+            moveMade = true;
+          } else {
+            // Mache den Zug rückgängig wenn er den eigenen König in Schach setzt
+            pieces.remove(newPiece);
+            pieces.add(movingPiece);
+            if (capturedPiece != null) {
+              pieces.add(capturedPiece);
+            }
+          }
         }
         
         selectedPiece = null;
-        possibleMoves = []; // Lösche mögliche Züge
+        possibleMoves = [];
 
         if (moveMade) {
           currentPlayer = (currentPlayer == PieceColor.white) 
               ? PieceColor.black 
               : PieceColor.white;
+            
+          // Prüfe auf Schach oder Schachmatt
+          if (_isInCheck(currentPlayer)) {
+            if (_isCheckmate(currentPlayer)) {
+              // Zeige Schachmatt-Dialog
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Schachmatt!'),
+                  content: Text('${currentPlayer == PieceColor.white ? "Schwarz" : "Weiß"} gewinnt!'),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        // Optional: Spiel neu starten
+                        setState(() {
+                          pieces.clear();
+                          _setupInitialBoard();
+                          currentPlayer = PieceColor.white;
+                        });
+                      },
+                      child: const Text('Neues Spiel'),
+                    ),
+                  ],
+                ),
+              );
+            } else {
+              // Zeige Schach-Nachricht
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${currentPlayer == PieceColor.white ? "Weiß" : "Schwarz"} steht im Schach!'),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+          }
         }
       }
     });
@@ -204,26 +270,141 @@ class _ChessBoardState extends State<ChessBoard> {
 
   // Hilfsmethode um zu prüfen, ob der Weg frei ist
   bool _isPathClear(String from, String to) {
-    final fromFile = from[0];
+    final fromFile = from[0].codeUnitAt(0);
     final fromRank = int.parse(from[1]);
-    final toFile = to[0];
+    final toFile = to[0].codeUnitAt(0);
     final toRank = int.parse(to[1]);
 
-    final fileStep = (toFile.codeUnitAt(0) - fromFile.codeUnitAt(0)).sign;
+    final fileStep = (toFile - fromFile).sign;
     final rankStep = (toRank - fromRank).sign;
 
-    var currentFile = fromFile.codeUnitAt(0) + fileStep;
+    var currentFile = fromFile + fileStep;
     var currentRank = fromRank + rankStep;
 
-    while (String.fromCharCode(currentFile) != toFile || currentRank != toRank) {
+    // Prüfe, ob wir noch innerhalb des Schachbretts sind
+    while (currentFile >= 'a'.codeUnitAt(0) && 
+           currentFile <= 'h'.codeUnitAt(0) && 
+           currentRank >= 1 && 
+           currentRank <= 8) {
+      
+      // Wenn wir das Zielfeld erreicht haben, beenden wir die Schleife
+      if (currentFile == toFile && currentRank == toRank) {
+        break;
+      }
+
+      // Prüfe, ob das aktuelle Feld frei ist
       final position = '${String.fromCharCode(currentFile)}$currentRank';
       if (_getPieceAtPosition(position) != null) {
         return false;
       }
+
+      // Gehe zum nächsten Feld
       currentFile += fileStep;
       currentRank += rankStep;
     }
+
     return true;
+  }
+
+  // Prüft, ob ein König im Schach steht
+  bool _isInCheck(PieceColor kingColor) {
+    // Finde die Position des Königs
+    final king = pieces.firstWhere(
+      (piece) => piece.type == PieceType.king && piece.color == kingColor
+    );
+    
+    // Prüfe, ob irgendeine gegnerische Figur den König angreifen kann
+    for (final piece in pieces) {
+      if (piece.color != kingColor && _isValidMove(piece, king.position)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Prüft, ob Schachmatt vorliegt
+  bool _isCheckmate(PieceColor kingColor) {
+    if (!_isInCheck(kingColor)) return false;
+
+    // Finde den König
+    final king = pieces.firstWhere(
+      (piece) => piece.type == PieceType.king && piece.color == kingColor
+    );
+
+    // 1. Kann der König sich bewegen?
+    for (int rank = 1; rank <= 8; rank++) {
+      for (String file in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+        final targetPosition = '$file$rank';
+        if (_isValidMove(king, targetPosition)) {
+          // Simuliere den Zug
+          final originalPosition = king.position;
+          final capturedPiece = _getPieceAtPosition(targetPosition);
+          
+          // Führe den Zug temporär aus
+          pieces.remove(capturedPiece);
+          pieces.remove(king);
+          pieces.add(ChessPiece(
+            type: king.type,
+            color: king.color,
+            position: targetPosition
+          ));
+
+          // Prüfe ob der König nach dem Zug noch im Schach steht
+          final stillInCheck = _isInCheck(kingColor);
+
+          // Mache den Zug rückgängig
+          pieces.remove(pieces.last);
+          pieces.add(king);
+          if (capturedPiece != null) {
+            pieces.add(capturedPiece);
+          }
+
+          if (!stillInCheck) {
+            return false; // König kann sich bewegen
+          }
+        }
+      }
+    }
+
+    // 2. Kann eine andere Figur das Schach abwehren?
+    final ownPieces = pieces.where((p) => p.color == kingColor && p.type != PieceType.king);
+    for (final piece in ownPieces) {
+      for (int rank = 1; rank <= 8; rank++) {
+        for (String file in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+          final targetPosition = '$file$rank';
+          if (_isValidMove(piece, targetPosition)) {
+            // Simuliere den Zug
+            final originalPosition = piece.position;
+            final capturedPiece = _getPieceAtPosition(targetPosition);
+            
+            // Führe den Zug temporär aus
+            pieces.remove(capturedPiece);
+            pieces.remove(piece);
+            pieces.add(ChessPiece(
+              type: piece.type,
+              color: piece.color,
+              position: targetPosition
+            ));
+
+            // Prüfe ob der König nach dem Zug noch im Schach steht
+            final stillInCheck = _isInCheck(kingColor);
+
+            // Mache den Zug rückgängig
+            pieces.remove(pieces.last);
+            pieces.add(piece);
+            if (capturedPiece != null) {
+              pieces.add(capturedPiece);
+            }
+
+            if (!stillInCheck) {
+              return false; // Eine Figur kann das Schach abwehren
+            }
+          }
+        }
+      }
+    }
+
+    return true; // Keine Möglichkeit das Schach abzuwehren -> Schachmatt
   }
 
   @override
@@ -232,22 +413,39 @@ class _ChessBoardState extends State<ChessBoard> {
       builder: (context, constraints) {
         final size = constraints.maxWidth < constraints.maxHeight 
             ? constraints.maxWidth 
-            : constraints.maxHeight * 0.9; // Reduzieren um 10% für Text
+            : constraints.maxHeight * 0.9;
         
-        final squareSize = size / 8; // Größe eines Schachfeldes
-        final fontSize = squareSize * 0.6; // Schriftgröße relativ zum Feld
+        final squareSize = size / 8;
+        final fontSize = squareSize * 0.6;
 
         return SizedBox(
-          height: size + 50, // Extra Platz für den Text oben
+          height: size + 50,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  '${currentPlayer == PieceColor.white ? "Weiß" : "Schwarz"} ist am Zug',
-                  style: TextStyle(fontSize: fontSize * 0.5),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      '${currentPlayer == PieceColor.white ? "Weiß" : "Schwarz"} ist am Zug',
+                      style: TextStyle(fontSize: fontSize * 0.5),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.rotate_right),
+                    onPressed: () {
+                      setState(() {
+                        isRotated = !isRotated;
+                        // Leere die möglichen Züge beim Drehen
+                        possibleMoves = [];
+                        selectedPiece = null;
+                      });
+                    },
+                    tooltip: 'Brett drehen',
+                  ),
+                ],
               ),
               Container(
                 width: size,
@@ -262,13 +460,15 @@ class _ChessBoardState extends State<ChessBoard> {
                   ),
                   itemCount: 64,
                   itemBuilder: (context, index) {
-                    final row = index ~/ 8;
-                    final col = index % 8;
-                    final isWhite = (row + col) % 2 == 0;
                     final position = _getPositionFromIndex(index);
                     final piece = _getPieceAtPosition(position);
                     final isSelected = selectedPiece?.position == position;
                     final isPossibleMove = possibleMoves.contains(position);
+
+                    // Berechne die Farbe des Feldes basierend auf der gedrehten Position
+                    final row = isRotated ? (7 - (index ~/ 8)) : (index ~/ 8);
+                    final col = isRotated ? (7 - (index % 8)) : (index % 8);
+                    final isWhite = (row + col) % 2 == 0;
 
                     return GestureDetector(
                       onTap: () => _onTileTapped(position),
@@ -276,13 +476,11 @@ class _ChessBoardState extends State<ChessBoard> {
                         color: isSelected 
                             ? Colors.yellow[700]
                             : isPossibleMove 
-                                ? Colors.green[300] // Markiere mögliche Züge
+                                ? Colors.green[300]
                                 : (isWhite ? Colors.white : Colors.grey[800]),
-                        child: Stack(
-                          children: [
-                            if (piece != null)
-                              Center(
-                                child: Text(
+                        child: Center(
+                          child: piece != null
+                              ? Text(
                                   piece.symbol,
                                   style: TextStyle(
                                     fontSize: fontSize,
@@ -299,20 +497,8 @@ class _ChessBoardState extends State<ChessBoard> {
                                       ),
                                     ],
                                   ),
-                                ),
-                              ),
-                            if (isPossibleMove && piece == null)
-                              Center(
-                                child: Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.3),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              ),
-                          ],
+                                )
+                              : null,
                         ),
                       ),
                     );
