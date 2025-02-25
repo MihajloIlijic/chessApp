@@ -19,6 +19,9 @@ class _ChessBoardState extends State<ChessBoard> {
   // Neue Variablen für das Tracking der Bewegungen
   final Map<String, bool> hasMoved = {};
 
+  // Variable für En Passant
+  String? enPassantTargetSquare;
+
   @override
   void initState() {
     super.initState();
@@ -135,47 +138,73 @@ class _ChessBoardState extends State<ChessBoard> {
           _calculatePossibleMoves(tappedPiece);
         }
       } else {
-        // Stellen Sie sicher, dass selectedPiece nicht null ist
         final movingPiece = selectedPiece!;
         bool moveMade = false;
 
         if (_isValidMove(movingPiece, position)) {
-          // Simuliere den Zug um zu prüfen, ob er den eigenen König in Schach setzt
           final originalPosition = movingPiece.position;
           final capturedPiece = _getPieceAtPosition(position);
 
-          // Prüfe auf Rochade
-          if (movingPiece.type == PieceType.king && _canCastle(movingPiece, position)) {
-            _performCastling(movingPiece, position);
+          // Prüfe auf En Passant
+          if (movingPiece.type == PieceType.pawn) {
+            // Check En Passant: Zielfeld ist leer und == enPassantTargetSquare?
+            if (capturedPiece == null && position == enPassantTargetSquare) {
+              final file = position[0];
+              final rank = int.parse(position[1]);
+              
+              // Wenn weiß zieht, stand der schwarze Bauer eine Reihe tiefer
+              // Wenn schwarz zieht, stand der weiße Bauer eine Reihe höher
+              final capturedRank = (movingPiece.color == PieceColor.white) 
+                  ? rank - 1 
+                  : rank + 1;
+              final capturedPos = '$file$capturedRank';
+
+              final capturedPawn = _getPieceAtPosition(capturedPos);
+              if (capturedPawn != null) {
+                pieces.remove(capturedPawn);
+              }
+            }
+
+            // Setze En Passant Target bei Doppelzug
+            final fromRank = int.parse(originalPosition[1]);
+            final toRank = int.parse(position[1]);
+            
+            if ((movingPiece.color == PieceColor.white && fromRank == 2 && toRank == 4) ||
+                (movingPiece.color == PieceColor.black && fromRank == 7 && toRank == 5)) {
+              final file = originalPosition[0];
+              final intermediateRank = (fromRank + toRank) ~/ 2;
+              enPassantTargetSquare = '$file$intermediateRank';
+            } else {
+              enPassantTargetSquare = null;
+            }
+          } else {
+            enPassantTargetSquare = null;
+          }
+
+          // Normaler Zug (existierender Code)
+          if (capturedPiece != null) {
+            pieces.remove(capturedPiece);
+          }
+          pieces.remove(movingPiece);
+          pieces.add(ChessPiece(
+            type: movingPiece.type,
+            color: movingPiece.color,
+            position: position
+          ));
+
+          // Aktualisiere hasMoved für König und Türme
+          if (movingPiece.type == PieceType.king || movingPiece.type == PieceType.rook) {
+            hasMoved[originalPosition] = true;
+          }
+
+          if (!_isInCheck(currentPlayer)) {
             moveMade = true;
           } else {
-            // Normaler Zug (existierender Code)
+            // Mache den Zug rückgängig
+            pieces.remove(pieces.last);
+            pieces.add(movingPiece);
             if (capturedPiece != null) {
-              pieces.remove(capturedPiece);
-            }
-            pieces.remove(movingPiece);
-
-            final newPiece = ChessPiece(
-              type: movingPiece.type,
-              color: movingPiece.color,
-              position: position
-            );
-            pieces.add(newPiece);
-
-            // Aktualisiere hasMoved für König und Türme
-            if (movingPiece.type == PieceType.king || movingPiece.type == PieceType.rook) {
-              hasMoved[originalPosition] = true;
-            }
-
-            if (!_isInCheck(currentPlayer)) {
-              moveMade = true;
-            } else {
-              // Mache den Zug rückgängig
-              pieces.remove(newPiece);
-              pieces.add(movingPiece);
-              if (capturedPiece != null) {
-                pieces.add(capturedPiece);
-              }
+              pieces.add(capturedPiece);
             }
           }
         }
@@ -276,28 +305,32 @@ class _ChessBoardState extends State<ChessBoard> {
                (fileDiff == 0 || rankDiff == 0);
 
       case PieceType.pawn:
-        // Bauern haben komplexere Regeln
         if (piece.color == PieceColor.white) {
-          // Weißer Bauer bewegt sich nach oben
+          // Normaler Zug vorwärts
           if (fileDiff == 0) {
-            // Normaler Zug vorwärts
             if (rankDiff == 1 && _getPieceAtPosition(targetPosition) == null) {
               return true;
             }
-            // Doppelzug von Startposition
             if (currentRank == 2 && rankDiff == 2 &&
                 _getPieceAtPosition(targetPosition) == null &&
                 _getPieceAtPosition('$currentFile${currentRank + 1}') == null) {
               return true;
             }
           }
-          // Schlagen diagonal
+          // Schlagen diagonal (inkl. En Passant)
           if (rankDiff == 1 && fileDiff.abs() == 1) {
             final targetPiece = _getPieceAtPosition(targetPosition);
-            return targetPiece != null && targetPiece.color != piece.color;
+            // Normales Schlagen
+            if (targetPiece != null && targetPiece.color != piece.color) {
+              return true;
+            }
+            // En Passant
+            if (targetPiece == null && targetPosition == enPassantTargetSquare) {
+              return true;
+            }
           }
         } else {
-          // Schwarzer Bauer bewegt sich nach unten
+          // Schwarzer Bauer
           if (fileDiff == 0) {
             if (rankDiff == -1 && _getPieceAtPosition(targetPosition) == null) {
               return true;
@@ -308,9 +341,17 @@ class _ChessBoardState extends State<ChessBoard> {
               return true;
             }
           }
+          // Schlagen diagonal (inkl. En Passant)
           if (rankDiff == -1 && fileDiff.abs() == 1) {
             final targetPiece = _getPieceAtPosition(targetPosition);
-            return targetPiece != null && targetPiece.color != piece.color;
+            // Normales Schlagen
+            if (targetPiece != null && targetPiece.color != piece.color) {
+              return true;
+            }
+            // En Passant
+            if (targetPiece == null && targetPosition == enPassantTargetSquare) {
+              return true;
+            }
           }
         }
         return false;
