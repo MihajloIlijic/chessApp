@@ -5,7 +5,7 @@ class FirebaseConfig {
     try {
       await Firebase.initializeApp(
         options: const FirebaseOptions(
-          apiKey: "YOUR_API_KEY",
+          apiKey: "AIzaSyAZyuR2n1vJtF6PtR2fhYRqQ2QYKwnt4IA",
           authDomain: "YOUR_AUTH_DOMAIN",
           projectId: "YOUR_PROJECT_ID",
           storageBucket: "YOUR_STORAGE_BUCKET",

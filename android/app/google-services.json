@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "867987530241",
+    "project_id": "chessapp-e8234",
+    "storage_bucket": "chessapp-e8234.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:867987530241:android:f6598880e3ab305f111600",
+        "android_client_info": {
+          "package_name": "com.example.chess_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZyuR2n1vJtF6PtR2fhYRqQ2QYKwnt4IA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
